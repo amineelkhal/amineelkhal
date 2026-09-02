@@ -4,13 +4,13 @@
 # Lancé par cPanel quand tu cliques « Deploy HEAD Commit » (onglet Pull or Deploy).
 # Les tâches s'exécutent depuis le dossier du dépôt, sur le serveur.
 #
-# VÉRIFIE DEPLOYPATH avant le premier déploiement : cPanel affiche le chemin du
-# répertoire personnel en haut à droite de sa page d'accueil. Le chemin ci-dessous
-# vient des anciens logs PHP du site (/home/amineyt0/public_html).
+# $HOME est le répertoire personnel du compte cPanel qui exécute le déploiement.
+# On évite ainsi d'écrire le nom du compte en dur, ce qui serait exposé si le
+# dépôt devient public.
 
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/amineyt0/public_html
+    - export DEPLOYPATH=$HOME/public_html
 
     # Les dossiers doivent exister avant la copie, sinon « cp -R css » créerait
     # un css/css imbriqué au second déploiement.
@@ -20,7 +20,6 @@ deployment:
     # Pages et configuration
     - /bin/cp -f index.php mailer.php $DEPLOYPATH/
     - /bin/cp -f .htaccess robots.txt sitemap.xml manifest.json humans.txt $DEPLOYPATH/
-    - /bin/cp -f indexold.html $DEPLOYPATH/
 
     # Fragments d'inclusion
     - /bin/cp -f _inc_about.php _inc_career.php _inc_footer.php $DEPLOYPATH/
@@ -35,6 +34,9 @@ deployment:
     - /bin/cp -Rf icons/. $DEPLOYPATH/icons/
     - /bin/cp -Rf img/. $DEPLOYPATH/img/
     - /bin/cp -Rf lang/. $DEPLOYPATH/lang/
+
+    # Ancienne version du site, retirée.
+    - /bin/rm -f $DEPLOYPATH/indexold.html
 
     # Sections retirées du site : à faire disparaître du serveur.
     - /bin/rm -f $DEPLOYPATH/_inc_works.php

@@ -20,3 +20,6 @@
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# Archives de deploiement
+*.zip
