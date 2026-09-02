@@ -1,0 +1,16 @@
+{
+	"name": "Amine ELKHAL",
+	"short_name": "A. ELKHAL",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#191a21",
+	"theme_color": "#191a21",
+	"icons": [
+		{
+			"src": "/icons/logo.png",
+			"sizes": "679x679",
+			"type": "image/png",
+			"purpose": "any"
+		}
+	]
+}

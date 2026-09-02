@@ -1,0 +1,42 @@
+---
+# Déploiement cPanel Git Version Control.
+#
+# Lancé par cPanel quand tu cliques « Deploy HEAD Commit » (onglet Pull or Deploy).
+# Les tâches s'exécutent depuis le dossier du dépôt, sur le serveur.
+#
+# VÉRIFIE DEPLOYPATH avant le premier déploiement : cPanel affiche le chemin du
+# répertoire personnel en haut à droite de sa page d'accueil. Le chemin ci-dessous
+# vient des anciens logs PHP du site (/home/amineyt0/public_html).
+
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/amineyt0/public_html
+
+    # Les dossiers doivent exister avant la copie, sinon « cp -R css » créerait
+    # un css/css imbriqué au second déploiement.
+    - /bin/mkdir -p $DEPLOYPATH/css $DEPLOYPATH/js $DEPLOYPATH/fonts
+    - /bin/mkdir -p $DEPLOYPATH/icons $DEPLOYPATH/img $DEPLOYPATH/lang
+
+    # Pages et configuration
+    - /bin/cp -f index.php mailer.php $DEPLOYPATH/
+    - /bin/cp -f .htaccess robots.txt sitemap.xml manifest.json humans.txt $DEPLOYPATH/
+    - /bin/cp -f indexold.html $DEPLOYPATH/
+
+    # Fragments d'inclusion
+    - /bin/cp -f _inc_about.php _inc_career.php _inc_footer.php $DEPLOYPATH/
+    - /bin/cp -f _inc_lang.php _inc_loader.php _inc_nav.php $DEPLOYPATH/
+    - /bin/cp -f _inc_nav_mobile.php _inc_platforms.php _inc_shapes.php $DEPLOYPATH/
+    - /bin/cp -f _inc_some_shapes.php _inc_stats.php $DEPLOYPATH/
+
+    # Assets
+    - /bin/cp -Rf css/. $DEPLOYPATH/css/
+    - /bin/cp -Rf js/. $DEPLOYPATH/js/
+    - /bin/cp -Rf fonts/. $DEPLOYPATH/fonts/
+    - /bin/cp -Rf icons/. $DEPLOYPATH/icons/
+    - /bin/cp -Rf img/. $DEPLOYPATH/img/
+    - /bin/cp -Rf lang/. $DEPLOYPATH/lang/
+
+    # Sections retirées du site : à faire disparaître du serveur.
+    - /bin/rm -f $DEPLOYPATH/_inc_works.php
+    - /bin/rm -f $DEPLOYPATH/_inc_experiments.php
+    - /bin/rm -f $DEPLOYPATH/_inc_projects.php

@@ -1,0 +1,28 @@
+# Le dépôt stocke tout en LF, et le serveur Linux reçoit du LF, quel que soit
+# le réglage core.autocrlf de la machine qui pousse. Indispensable pour
+# .cpanel.yml (YAML) et .htaccess, que CRLF peut casser.
+
+* text=auto
+
+*.php       text eol=lf
+*.yml       text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.html      text eol=lf
+*.txt       text eol=lf
+*.xml       text eol=lf
+*.json      text eol=lf
+*.svg       text eol=lf
+.htaccess   text eol=lf
+.gitignore  text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.eot   binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary

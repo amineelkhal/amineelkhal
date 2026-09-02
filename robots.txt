@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Anciennes versions et fragments d'inclusion : pas de contenu autonome
+Disallow: /indexold.html
+Disallow: /_inc_
+Disallow: /mailer.php
+
+Sitemap: https://www.amineelkhal.com/sitemap.xml

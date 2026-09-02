@@ -1,0 +1,48 @@
+# www.amineelkhal.com
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Canonical host: www (matches <link rel="canonical"> and the CV).
+    # Remove this block if you ever prefer the bare domain.
+    RewriteCond %{HTTP_HOST} !^www\. [NC]
+    RewriteCond %{HTTPS} on
+    RewriteRule ^(.*)$ https://www.%{HTTP_HOST}/$1 [R=301,L]
+
+    # English version served at /en/ — rewritten, not redirected.
+    # Assets are referenced root-relative so they keep resolving from /en/.
+    RewriteRule ^en/?$ index.php?lang=en [L,QSA]
+    RewriteRule ^fr/?$ index.php?lang=fr [L,QSA]
+</IfModule>
+
+# Include fragments are not standalone pages.
+<FilesMatch "^_inc_">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css              "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png             "access plus 1 year"
+    ExpiresByType image/jpeg            "access plus 1 year"
+    ExpiresByType image/gif             "access plus 1 year"
+    ExpiresByType image/svg+xml         "access plus 1 year"
+    ExpiresByType font/woff2            "access plus 1 year"
+    ExpiresByType application/pdf       "access plus 1 week"
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

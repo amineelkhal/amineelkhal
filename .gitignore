@@ -1,0 +1,22 @@
+# Sauvegardes créées par le script de déploiement FTP
+/_backup_prod_*/
+
+# Scripts de déploiement FTP : contiennent l'hôte et l'identifiant du compte,
+# et sont remplacés par le déploiement Git de cPanel.
+/deploy.ps1
+/deploy.sh
+
+# Journal d'erreurs généré par le serveur (expose les chemins de l'hébergeur)
+/error_log
+
+# Outillage local
+/.claude/
+
+# Copies de sauvegarde
+*.bak
+*.avant-fix-ga
+
+# Système
+Thumbs.db
+.DS_Store
+desktop.ini
