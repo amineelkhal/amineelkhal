@@ -16,56 +16,89 @@ concurrency:
 jobs:
   deployer:
     runs-on: ubuntu-latest
+    env:
+      CPANEL_HOST: serveur133.heberjahiz.com
+      CPANEL_USER: ${{ secrets.CPANEL_USER }}
+      CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+
     steps:
-      - name: Déclencher le déploiement sur cPanel
-        env:
-          CPANEL_HOST: serveur133.heberjahiz.com
-          CPANEL_USER: ${{ secrets.CPANEL_USER }}
-          CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
-          # Chemin relatif au répertoire personnel : évite d'écrire le nom du
-          # compte cPanel dans un dépôt public.
-          REPO_ROOT: repositories/amineelkhal
+      - name: Lister les dépôts Git connus de cPanel
+        id: depots
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           if [ -z "${CPANEL_USER:-}" ] || [ -z "${CPANEL_TOKEN:-}" ]; then
             echo "::error::Les secrets CPANEL_USER et CPANEL_TOKEN ne sont pas définis."
-            echo "Settings du dépôt -> Secrets and variables -> Actions -> New repository secret"
             exit 1
           fi
 
-          api() {
-            # $1 = module/fonction, $2 = query string
-            curl --silent --show-error --fail-with-body --max-time 120 \
-                 --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
-                 "https://${CPANEL_HOST}:2083/execute/$1?$2"
-          }
+          # -G + --data-urlencode : encodage correct des paramètres, sans bricolage.
+          http=$(curl --silent --show-error --max-time 60 \
+                      --output /tmp/repos.json --write-out '%{http_code}' \
+                      --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
+                      "https://${CPANEL_HOST}:2083/execute/VersionControl/retrieve")
 
-          echo "== Dépôts Git connus de cPanel =="
-          api "VersionControl/retrieve" "" | tee /tmp/repos.json
+          echo "HTTP $http"
+          echo "--- réponse cPanel ---"
+          cat /tmp/repos.json
           echo
+          echo "----------------------"
 
-          echo "== Déclenchement du déploiement =="
-          api "VersionControlDeployment/create" \
-              "repository_root=$(printf '%s' "$REPO_ROOT" | sed 's|/|%2F|g')" \
-              | tee /tmp/deploy.json
-          echo
-
-          # UAPI renvoie toujours HTTP 200 : le succès se lit dans le champ
-          # "errors" du corps JSON, pas dans le code de statut.
-          if grep -q '"errors":null' /tmp/deploy.json; then
-            echo "Déploiement mis en file d'attente par cPanel."
-          else
-            echo "::error::cPanel a refusé le déploiement, voir la réponse ci-dessus."
+          if [ "$http" != "200" ]; then
+            echo "::error::cPanel a répondu HTTP $http. Jeton invalide ou API inaccessible."
             exit 1
           fi
 
-      - name: Vérifier le site en ligne
-        # Le déploiement cPanel est asynchrone : on laisse le temps aux tâches
-        # de .cpanel.yml de s'exécuter avant de contrôler le résultat.
+          if [ "$(jq -r '.errors' /tmp/repos.json)" != "null" ]; then
+            echo "::error::cPanel a renvoyé une erreur : $(jq -c '.errors' /tmp/repos.json)"
+            exit 1
+          fi
+
+          nb=$(jq -r '.data | length' /tmp/repos.json)
+          echo "Dépôts trouvés : $nb"
+          jq -r '.data[] | "  \(.name)  ->  \(.repository_root)"' /tmp/repos.json
+
+          if [ "$nb" = "0" ]; then
+            echo "::error::cPanel ne connaît aucun dépôt Git. Crée-le dans Git Version Control."
+            exit 1
+          fi
+
+          # On prend le dépôt nommé amineelkhal, sinon le premier de la liste.
+          root=$(jq -r '[.data[] | select(.name == "amineelkhal")][0].repository_root // .data[0].repository_root' /tmp/repos.json)
+          echo "Chemin retenu : $root"
+          echo "root=$root" >> "$GITHUB_OUTPUT"
+
+      - name: Déclencher le déploiement
         run: |
           set -uo pipefail
-          echo "Attente de 45 s avant vérification..."
+          root='${{ steps.depots.outputs.root }}'
+          echo "Déploiement de : $root"
+
+          http=$(curl --silent --show-error --max-time 120 -G \
+                      --output /tmp/deploy.json --write-out '%{http_code}' \
+                      --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
+                      --data-urlencode "repository_root=$root" \
+                      "https://${CPANEL_HOST}:2083/execute/VersionControlDeployment/create")
+
+          echo "HTTP $http"
+          echo "--- réponse cPanel ---"
+          cat /tmp/deploy.json
+          echo
+          echo "----------------------"
+
+          # UAPI renvoie HTTP 200 même en cas d'échec : le verdict est dans le JSON.
+          if [ "$(jq -r '.errors' /tmp/deploy.json)" != "null" ]; then
+            echo "::error::cPanel a refusé : $(jq -c '.errors' /tmp/deploy.json)"
+            exit 1
+          fi
+          echo "Déploiement mis en file d'attente."
+
+      - name: Vérifier le site en ligne
+        # Le déploiement cPanel est asynchrone : on laisse aux tâches de
+        # .cpanel.yml le temps de s'exécuter avant de contrôler le résultat.
+        run: |
+          set -uo pipefail
+          echo "Attente de 45 s..."
           sleep 45
 
           echec=0
@@ -79,7 +112,7 @@ jobs:
             fi
           }
 
-          echo "== Fichiers qui doivent exister =="
+          echo "== Doivent exister =="
           verifier "/"                  200
           verifier "/en/"               200
           verifier "/robots.txt"        200
@@ -87,11 +120,11 @@ jobs:
           verifier "/css/sections.css"  200
           verifier "/icons/og-fr.png"   200
 
-          echo "== Fichiers qui doivent avoir disparu =="
+          echo "== Doivent avoir disparu =="
           verifier "/indexold.html"     404
           verifier "/_inc_works.php"    404
 
-          echo "== Contenu de la page d'accueil =="
+          echo "== Contenu servi =="
           if curl -s "https://www.amineelkhal.com/?cb=$RANDOM" | grep -q 'stats-band'; then
             echo "  ok    les nouvelles sections sont en ligne"
           else
