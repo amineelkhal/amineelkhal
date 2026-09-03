@@ -85,6 +85,9 @@ jobs:
           # designe donc les identifiants ou le certificat, rien d'autre.
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
+          set dns:order "inet"
+          set ftp:prefer-epsv false
+          set ftp:ssl-protect-data false
           set ssl:verify-certificate true
           set ftp:passive-mode true
           set net:max-retries 1
@@ -114,7 +117,9 @@ jobs:
           # prefixe public_html est le bon.
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
-          set ftp:ssl-protect-data true
+          set dns:order "inet"
+          set ftp:prefer-epsv false
+          set ftp:ssl-protect-data false
           set ssl:verify-certificate true
           set ftp:passive-mode true
           set net:max-retries 1
@@ -141,7 +146,9 @@ jobs:
 
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
-          set ftp:ssl-protect-data true
+          set dns:order "inet"
+          set ftp:prefer-epsv false
+          set ftp:ssl-protect-data false
           set ssl:verify-certificate true
           set ftp:passive-mode true
           set net:max-retries 3
@@ -175,6 +182,9 @@ jobs:
           # Pas de fail-exit ici : un fichier deja absent est un cas normal.
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
+          set dns:order "inet"
+          set ftp:prefer-epsv false
+          set ftp:ssl-protect-data false
           set ssl:verify-certificate true
           set ftp:passive-mode true
           open ftp://$FTP_HOST
