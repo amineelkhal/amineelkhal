@@ -1,15 +1,17 @@
 name: Déploiement FTPS
 
-# Déploiement direct par FTPS explicite (AUTH TLS sur le port 21).
+# Déploiement par FTPS explicite (AUTH TLS sur le port 21).
 #
-# Pourquoi pas l'API cPanel : Heberjahiz place une page de défi anti-bot
-# (openresty, « One moment, please... ») devant le port 2083. Tout client non
-# navigateur reçoit du HTML au lieu du JSON, l'API est donc inutilisable ici.
-# Pourquoi pas SSH : les ports 22, 2222, 7822 et 21098 sont tous fermés.
+# Pourquoi ni SSH ni l'API cPanel : les ports 22, 2222, 7822 et 21098 sont
+# fermés, et Heberjahiz place une page de défi anti-bot (openresty, « One
+# moment, please... ») devant le port 2083, qui renvoie du HTML au lieu du JSON.
 #
-# Le certificat du serveur est un Let's Encrypt émis pour
-# serveur133.heberjahiz.com — d'où la connexion à ce nom plutôt qu'à
-# ftp.amineelkhal.com, ce qui permet de vérifier le certificat strictement.
+# Connexion à serveur133.heberjahiz.com et non à ftp.amineelkhal.com : le
+# certificat Let's Encrypt du serveur est émis pour ce nom, ce qui permet de
+# vérifier le certificat strictement au lieu de désactiver le contrôle.
+#
+# Les étapes sont volontairement fines : le nom de l'étape en échec suffit à
+# diagnostiquer, sans avoir à ouvrir les logs.
 
 on:
   push:
@@ -32,28 +34,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer lftp
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
-
-      - name: Envoyer les fichiers
+      - name: Controle du secret FTP_USER
         run: |
-          set -uo pipefail
-
-          if [ -z "${FTP_USER:-}" ] || [ -z "${FTP_PASSWORD:-}" ]; then
-            echo "::error::Identifiants absents des SECRETS du depot."
-            echo ""
-            echo "Settings -> Secrets and variables -> Actions -> onglet SECRETS"
-            echo "  -> New repository secret :  FTP_USER  et  FTP_PASSWORD"
-            echo ""
-            echo "Attention : l'onglet VARIABLES, juste a cote, ne convient pas."
-            echo "Une variable n'est pas masquee dans les logs, et les logs d'un"
-            echo "depot public sont lisibles par tout le monde. Un mot de passe"
-            echo "place la doit etre considere comme divulgue et change."
+          if [ -z "${FTP_USER:-}" ]; then
+            echo "::error::Le secret FTP_USER est vide ou inexistant."
+            echo "Settings -> Secrets and variables -> Actions -> onglet SECRETS."
+            echo "L'onglet VARIABLES, juste a cote, ne convient pas : une variable"
+            echo "n'est pas masquee dans les logs, publics sur ce depot."
             exit 1
           fi
+          echo "FTP_USER present (${#FTP_USER} caracteres)."
 
-          # Identifiants dans un .netrc en 600 : jamais en argument de commande,
-          # donc invisibles dans la liste des processus du runner.
+      - name: Controle du secret FTP_PASSWORD
+        run: |
+          if [ -z "${FTP_PASSWORD:-}" ]; then
+            echo "::error::Le secret FTP_PASSWORD est vide ou inexistant."
+            exit 1
+          fi
+          echo "FTP_PASSWORD present (${#FTP_PASSWORD} caracteres)."
+
+      - name: Installation de lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Connexion FTPS et validation du certificat
+        run: |
+          set -uo pipefail
+          umask 077
+          printf 'machine %s login %s password %s\n' \
+                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
+
+          # Connexion seule : ni envoi ni suppression. Isole les problemes
+          # d'identifiants, de pare-feu et de certificat.
+          lftp -f /dev/stdin <<LFTP
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set ftp:passive-mode true
+          set net:max-retries 2
+          set net:timeout 25
+          set cmd:fail-exit true
+          open ftp://$FTP_HOST
+          pwd
+          cls -1 | head -40
+          bye
+          LFTP
+          rc=$?
+          rm -f "$HOME/.netrc"
+          if [ $rc -ne 0 ]; then
+            echo "::error::Connexion FTPS impossible (code $rc). Causes possibles :"
+            echo "  identifiants refuses, IP du runner GitHub bloquee par le"
+            echo "  pare-feu de l'hebergeur, ou port 21 filtre en sortie."
+            exit $rc
+          fi
+
+      - name: Envoi des fichiers
+        run: |
+          set -uo pipefail
           umask 077
           printf 'machine %s login %s password %s\n' \
                  "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
@@ -66,14 +102,11 @@ jobs:
           set net:max-retries 3
           set net:timeout 25
           set cmd:fail-exit true
-
           open ftp://$FTP_HOST
-
           mkdir -f $REMOTE/css
           mkdir -f $REMOTE/js
           mkdir -f $REMOTE/lang
           mkdir -f $REMOTE/icons
-
           put -O $REMOTE index.php mailer.php .htaccess robots.txt sitemap.xml manifest.json humans.txt
           put -O $REMOTE _inc_lang.php _inc_about.php _inc_career.php _inc_footer.php
           put -O $REMOTE _inc_loader.php _inc_nav.php _inc_nav_mobile.php _inc_platforms.php
@@ -82,24 +115,20 @@ jobs:
           put -O $REMOTE/js js/application.js
           put -O $REMOTE/lang lang/fr.php lang/en.php
           put -O $REMOTE/icons icons/og-fr.png icons/og-en.png
-
           bye
           LFTP
           rc=$?
+          rm -f "$HOME/.netrc"
+          [ $rc -eq 0 ] || { echo "::error::Echec de l'envoi (code $rc)"; exit $rc; }
 
-          shred -u "$HOME/.netrc" 2>/dev/null || rm -f "$HOME/.netrc"
-          [ $rc -eq 0 ] || { echo "::error::Echec de l'envoi FTPS (code $rc)"; exit $rc; }
-          echo "Fichiers envoyes."
-
-      - name: Supprimer les fichiers retirés du site
+      - name: Suppression des fichiers retirés du site
         run: |
           set -uo pipefail
           umask 077
           printf 'machine %s login %s password %s\n' \
                  "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
 
-          # cmd:fail-exit reste à false ici : un fichier déjà absent ne doit pas
-          # faire échouer le déploiement.
+          # Pas de fail-exit ici : un fichier deja absent est un cas normal.
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
           set ssl:verify-certificate true
@@ -111,11 +140,10 @@ jobs:
           rm -f $REMOTE/_inc_projects.php
           bye
           LFTP
-
-          shred -u "$HOME/.netrc" 2>/dev/null || rm -f "$HOME/.netrc"
+          rm -f "$HOME/.netrc"
           echo "Nettoyage termine."
 
-      - name: Vérifier le site en ligne
+      - name: Vérification du site en ligne
         run: |
           set -uo pipefail
           echec=0
