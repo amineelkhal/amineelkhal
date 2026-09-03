@@ -23,8 +23,13 @@ ini_set('display_errors', '0');
 
 header('Content-Type: text/plain; charset=utf-8');
 
-const MAIL_TO      = 'info@amineelkhal.com';
-const MAIL_FROM    = 'no-reply@amineelkhal.com'; // must belong to the domain, otherwise SPF/DMARC rejects it
+const MAIL_TO   = 'info@amineelkhal.com';
+
+// L'expéditeur d'enveloppe doit être une boîte réellement existante sur le
+// domaine : Exim vérifie l'expéditeur, et SPF rejette une adresse inconnue.
+// info@ est utilisée faute de no-reply@. Pour un expéditeur distinct, créer
+// no-reply@amineelkhal.com chez l'hébergeur puis remettre cette valeur ici.
+const MAIL_FROM = 'info@amineelkhal.com';
 const MIN_INTERVAL = 30; // seconds between two messages from the same visitor
 
 function fail($key, $code = 400, $arg = null)
