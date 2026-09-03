@@ -40,9 +40,15 @@ jobs:
           set -uo pipefail
 
           if [ -z "${FTP_USER:-}" ] || [ -z "${FTP_PASSWORD:-}" ]; then
-            echo "::error::Secrets manquants. Settings -> Secrets and variables -> Actions :"
-            echo "  FTP_USER      (exemple : test@amineelkhal.com)"
-            echo "  FTP_PASSWORD"
+            echo "::error::Identifiants absents des SECRETS du depot."
+            echo ""
+            echo "Settings -> Secrets and variables -> Actions -> onglet SECRETS"
+            echo "  -> New repository secret :  FTP_USER  et  FTP_PASSWORD"
+            echo ""
+            echo "Attention : l'onglet VARIABLES, juste a cote, ne convient pas."
+            echo "Une variable n'est pas masquee dans les logs, et les logs d'un"
+            echo "depot public sont lisibles par tout le monde. Un mot de passe"
+            echo "place la doit etre considere comme divulgue et change."
             exit 1
           fi
 
