@@ -1,0 +1,102 @@
+name: Déploiement cPanel
+
+# Chaque push sur main déclenche le déploiement cPanel, qui exécute les tâches
+# décrites dans .cpanel.yml (copie vers public_html + suppression des fichiers
+# retirés). Lançable aussi à la main depuis l'onglet Actions.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Un seul déploiement à la fois : deux push rapprochés ne se marchent pas dessus.
+concurrency:
+  group: deploiement-cpanel
+  cancel-in-progress: false
+
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher le déploiement sur cPanel
+        env:
+          CPANEL_HOST: serveur133.heberjahiz.com
+          CPANEL_USER: ${{ secrets.CPANEL_USER }}
+          CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+          # Chemin relatif au répertoire personnel : évite d'écrire le nom du
+          # compte cPanel dans un dépôt public.
+          REPO_ROOT: repositories/amineelkhal
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CPANEL_USER:-}" ] || [ -z "${CPANEL_TOKEN:-}" ]; then
+            echo "::error::Les secrets CPANEL_USER et CPANEL_TOKEN ne sont pas définis."
+            echo "Settings du dépôt -> Secrets and variables -> Actions -> New repository secret"
+            exit 1
+          fi
+
+          api() {
+            # $1 = module/fonction, $2 = query string
+            curl --silent --show-error --fail-with-body --max-time 120 \
+                 --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
+                 "https://${CPANEL_HOST}:2083/execute/$1?$2"
+          }
+
+          echo "== Dépôts Git connus de cPanel =="
+          api "VersionControl/retrieve" "" | tee /tmp/repos.json
+          echo
+
+          echo "== Déclenchement du déploiement =="
+          api "VersionControlDeployment/create" \
+              "repository_root=$(printf '%s' "$REPO_ROOT" | sed 's|/|%2F|g')" \
+              | tee /tmp/deploy.json
+          echo
+
+          # UAPI renvoie toujours HTTP 200 : le succès se lit dans le champ
+          # "errors" du corps JSON, pas dans le code de statut.
+          if grep -q '"errors":null' /tmp/deploy.json; then
+            echo "Déploiement mis en file d'attente par cPanel."
+          else
+            echo "::error::cPanel a refusé le déploiement, voir la réponse ci-dessus."
+            exit 1
+          fi
+
+      - name: Vérifier le site en ligne
+        # Le déploiement cPanel est asynchrone : on laisse le temps aux tâches
+        # de .cpanel.yml de s'exécuter avant de contrôler le résultat.
+        run: |
+          set -uo pipefail
+          echo "Attente de 45 s avant vérification..."
+          sleep 45
+
+          echec=0
+          verifier() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://www.amineelkhal.com$1?cb=$RANDOM")
+            if [ "$code" = "$2" ]; then
+              printf '  ok    %-22s %s\n' "$1" "$code"
+            else
+              printf '  ECHEC %-22s attendu %s, obtenu %s\n' "$1" "$2" "$code"
+              echec=1
+            fi
+          }
+
+          echo "== Fichiers qui doivent exister =="
+          verifier "/"                  200
+          verifier "/en/"               200
+          verifier "/robots.txt"        200
+          verifier "/sitemap.xml"       200
+          verifier "/css/sections.css"  200
+          verifier "/icons/og-fr.png"   200
+
+          echo "== Fichiers qui doivent avoir disparu =="
+          verifier "/indexold.html"     404
+          verifier "/_inc_works.php"    404
+
+          echo "== Contenu de la page d'accueil =="
+          if curl -s "https://www.amineelkhal.com/?cb=$RANDOM" | grep -q 'stats-band'; then
+            echo "  ok    les nouvelles sections sont en ligne"
+          else
+            echo "  ECHEC la page servie ne contient pas les nouvelles sections"
+            echec=1
+          fi
+
+          exit $echec
