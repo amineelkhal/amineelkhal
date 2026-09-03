@@ -3964,24 +3964,24 @@ var Util = (function(t) {
                                 }, 2e3),
                                 setTimeout(function() {
                                     e.removeClass("is-form-processing");
-                                }, 6e3),
+                                }, 11e3),
                                 setTimeout(function() {
                                     e.removeClass("success"), r.prop("disabled", !0);
-                                }, 7e3),
+                                }, 12e3),
                                 Util.sendGAEvent("Contact", "Contact Success", !1),
                                 i.find("input, textarea").val("");
                         })
                         .fail(function(t) {
-                            "" !== t.responseText ? s.text(t.responseText) : s.text("An error occured and your message could not be sent."),
+                            "" !== t.responseText ? s.text(t.responseText) : s.text(i.attr("data-error-fallback") || "An error occurred and your message could not be sent."),
                                 setTimeout(function() {
                                     e.removeClass("success").addClass("error");
                                 }, 2e3),
                                 setTimeout(function() {
                                     e.removeClass("is-form-processing");
-                                }, 6e3),
+                                }, 11e3),
                                 setTimeout(function() {
                                     e.removeClass("error");
-                                }, 7e3),
+                                }, 12e3),
                                 Util.sendGAEvent("Contact", "Contact Error", !1);
                         });
                 });

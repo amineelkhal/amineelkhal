@@ -14,7 +14,7 @@
 
 # Copies de sauvegarde
 *.bak
-*.avant-fix-ga
+*.avant-*
 
 # Système
 Thumbs.db

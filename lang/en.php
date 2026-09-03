@@ -296,6 +296,7 @@ return [
         "send"     => "Send message",
         "default"  => "Default message",
         "close"    => "Close",
+        "fallback" => "Something went wrong and your message could not be sent. Please write to info@amineelkhal.com directly.",
     ],
 
     "mailer" => [

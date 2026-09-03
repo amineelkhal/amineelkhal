@@ -18,7 +18,8 @@
             <h3 class="h4 form-title"><?php e('contact.title') ?></h3>
             <p class="form-subtitle"><?php e('contact.subtitle') ?></p>
             <div class="inner-container">
-                <form id="contact-form" method="post" action="/mailer.php" class="the-form no-smoothState">
+                <form id="contact-form" method="post" action="/mailer.php" class="the-form no-smoothState"
+                    data-error-fallback="<?= a('contact.fallback') ?>">
                     <input type="hidden" name="lang" value="<?= $LANG ?>" />
                     <div class="input required"><input type="text" id="name" name="name" /><label
                             class="label"><?php e('contact.name') ?></label></div>

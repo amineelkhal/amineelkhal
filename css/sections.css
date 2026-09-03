@@ -430,6 +430,48 @@ Palette reprise du site :
     margin-top: 6px;
 }
 
+/* ------------------------------------------- RETOUR APRES ENVOI DU FORM --- */
+/* Le panneau de confirmation existe deja dans application.css : il couvre le
+   formulaire en vert au succes, en rouge a l'echec. On lui ajoute seulement un
+   pictogramme et un centrage, pour qu'il se lise d'un coup d'oeil. */
+
+.form-message-content {
+    text-align: center;
+}
+
+.form-message-content .form-message {
+    line-height: 1.45;
+    max-width: 22em;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.success .form-message-content .form-message:before,
+.error .form-message-content .form-message:before {
+    display: block;
+    font-family: League Spartan, Helvetica, Arial, sans-serif;
+    font-size: 1.9em;
+    line-height: 1;
+    margin-bottom: 18px;
+    opacity: 0.9;
+}
+
+.success .form-message-content .form-message:before {
+    content: "\2713";
+    /* coche */
+}
+
+.error .form-message-content .form-message:before {
+    content: "\2715";
+    /* croix */
+}
+
+@media only screen and (max-width: 43.75em) {
+    .form-message-content .form-message {
+        font-size: 1.125em;
+    }
+}
+
 /* --------------------------------------------------------- RESPONSIVE ----- */
 
 @media only screen and (max-width: 64em) {

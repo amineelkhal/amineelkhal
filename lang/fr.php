@@ -296,6 +296,7 @@ return [
         "send"     => "Envoyer",
         "default"  => "Message par défaut",
         "close"    => "Fermer",
+        "fallback" => "Une erreur est survenue, votre message n'a pas pu être envoyé. Écrivez-moi directement à info@amineelkhal.com.",
     ],
 
     "mailer" => [
