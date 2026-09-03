@@ -1,106 +1,117 @@
-name: Déploiement cPanel
+name: Déploiement FTPS
 
-# Chaque push sur main déclenche le déploiement cPanel, qui exécute les tâches
-# décrites dans .cpanel.yml (copie vers public_html + suppression des fichiers
-# retirés). Lançable aussi à la main depuis l'onglet Actions.
+# Déploiement direct par FTPS explicite (AUTH TLS sur le port 21).
+#
+# Pourquoi pas l'API cPanel : Heberjahiz place une page de défi anti-bot
+# (openresty, « One moment, please... ») devant le port 2083. Tout client non
+# navigateur reçoit du HTML au lieu du JSON, l'API est donc inutilisable ici.
+# Pourquoi pas SSH : les ports 22, 2222, 7822 et 21098 sont tous fermés.
+#
+# Le certificat du serveur est un Let's Encrypt émis pour
+# serveur133.heberjahiz.com — d'où la connexion à ce nom plutôt qu'à
+# ftp.amineelkhal.com, ce qui permet de vérifier le certificat strictement.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Un seul déploiement à la fois : deux push rapprochés ne se marchent pas dessus.
 concurrency:
-  group: deploiement-cpanel
+  group: deploiement-ftps
   cancel-in-progress: false
 
 jobs:
   deployer:
     runs-on: ubuntu-latest
     env:
-      CPANEL_HOST: serveur133.heberjahiz.com
-      CPANEL_USER: ${{ secrets.CPANEL_USER }}
-      CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+      FTP_HOST: serveur133.heberjahiz.com
+      FTP_USER: ${{ secrets.FTP_USER }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      REMOTE: public_html
 
     steps:
-      - name: Lister les dépôts Git connus de cPanel
-        id: depots
+      - uses: actions/checkout@v4
+
+      - name: Installer lftp
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
+
+      - name: Envoyer les fichiers
         run: |
           set -uo pipefail
 
-          if [ -z "${CPANEL_USER:-}" ] || [ -z "${CPANEL_TOKEN:-}" ]; then
-            echo "::error::Les secrets CPANEL_USER et CPANEL_TOKEN ne sont pas définis."
+          if [ -z "${FTP_USER:-}" ] || [ -z "${FTP_PASSWORD:-}" ]; then
+            echo "::error::Secrets manquants. Settings -> Secrets and variables -> Actions :"
+            echo "  FTP_USER      (exemple : test@amineelkhal.com)"
+            echo "  FTP_PASSWORD"
             exit 1
           fi
 
-          # -G + --data-urlencode : encodage correct des paramètres, sans bricolage.
-          http=$(curl --silent --show-error --max-time 60 \
-                      --output /tmp/repos.json --write-out '%{http_code}' \
-                      --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
-                      "https://${CPANEL_HOST}:2083/execute/VersionControl/retrieve")
+          # Identifiants dans un .netrc en 600 : jamais en argument de commande,
+          # donc invisibles dans la liste des processus du runner.
+          umask 077
+          printf 'machine %s login %s password %s\n' \
+                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
 
-          echo "HTTP $http"
-          echo "--- réponse cPanel ---"
-          cat /tmp/repos.json
-          echo
-          echo "----------------------"
+          lftp -f /dev/stdin <<LFTP
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set ftp:passive-mode true
+          set net:max-retries 3
+          set net:timeout 25
+          set cmd:fail-exit true
 
-          if [ "$http" != "200" ]; then
-            echo "::error::cPanel a répondu HTTP $http. Jeton invalide ou API inaccessible."
-            exit 1
-          fi
+          open ftp://$FTP_HOST
 
-          if [ "$(jq -r '.errors' /tmp/repos.json)" != "null" ]; then
-            echo "::error::cPanel a renvoyé une erreur : $(jq -c '.errors' /tmp/repos.json)"
-            exit 1
-          fi
+          mkdir -f $REMOTE/css
+          mkdir -f $REMOTE/js
+          mkdir -f $REMOTE/lang
+          mkdir -f $REMOTE/icons
 
-          nb=$(jq -r '.data | length' /tmp/repos.json)
-          echo "Dépôts trouvés : $nb"
-          jq -r '.data[] | "  \(.name)  ->  \(.repository_root)"' /tmp/repos.json
+          put -O $REMOTE index.php mailer.php .htaccess robots.txt sitemap.xml manifest.json humans.txt
+          put -O $REMOTE _inc_lang.php _inc_about.php _inc_career.php _inc_footer.php
+          put -O $REMOTE _inc_loader.php _inc_nav.php _inc_nav_mobile.php _inc_platforms.php
+          put -O $REMOTE _inc_shapes.php _inc_some_shapes.php _inc_stats.php
+          put -O $REMOTE/css css/sections.css css/application.css css/index.css
+          put -O $REMOTE/js js/application.js
+          put -O $REMOTE/lang lang/fr.php lang/en.php
+          put -O $REMOTE/icons icons/og-fr.png icons/og-en.png
 
-          if [ "$nb" = "0" ]; then
-            echo "::error::cPanel ne connaît aucun dépôt Git. Crée-le dans Git Version Control."
-            exit 1
-          fi
+          bye
+          LFTP
+          rc=$?
 
-          # On prend le dépôt nommé amineelkhal, sinon le premier de la liste.
-          root=$(jq -r '[.data[] | select(.name == "amineelkhal")][0].repository_root // .data[0].repository_root' /tmp/repos.json)
-          echo "Chemin retenu : $root"
-          echo "root=$root" >> "$GITHUB_OUTPUT"
+          shred -u "$HOME/.netrc" 2>/dev/null || rm -f "$HOME/.netrc"
+          [ $rc -eq 0 ] || { echo "::error::Echec de l'envoi FTPS (code $rc)"; exit $rc; }
+          echo "Fichiers envoyes."
 
-      - name: Déclencher le déploiement
+      - name: Supprimer les fichiers retirés du site
         run: |
           set -uo pipefail
-          root='${{ steps.depots.outputs.root }}'
-          echo "Déploiement de : $root"
+          umask 077
+          printf 'machine %s login %s password %s\n' \
+                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
 
-          http=$(curl --silent --show-error --max-time 120 -G \
-                      --output /tmp/deploy.json --write-out '%{http_code}' \
-                      --header "Authorization: cpanel ${CPANEL_USER}:${CPANEL_TOKEN}" \
-                      --data-urlencode "repository_root=$root" \
-                      "https://${CPANEL_HOST}:2083/execute/VersionControlDeployment/create")
+          # cmd:fail-exit reste à false ici : un fichier déjà absent ne doit pas
+          # faire échouer le déploiement.
+          lftp -f /dev/stdin <<LFTP
+          set ftp:ssl-force true
+          set ssl:verify-certificate true
+          set ftp:passive-mode true
+          open ftp://$FTP_HOST
+          rm -f $REMOTE/indexold.html
+          rm -f $REMOTE/_inc_works.php
+          rm -f $REMOTE/_inc_experiments.php
+          rm -f $REMOTE/_inc_projects.php
+          bye
+          LFTP
 
-          echo "HTTP $http"
-          echo "--- réponse cPanel ---"
-          cat /tmp/deploy.json
-          echo
-          echo "----------------------"
-
-          # UAPI renvoie HTTP 200 même en cas d'échec : le verdict est dans le JSON.
-          if [ "$(jq -r '.errors' /tmp/deploy.json)" != "null" ]; then
-            echo "::error::cPanel a refusé : $(jq -c '.errors' /tmp/deploy.json)"
-            exit 1
-          fi
-          echo "Déploiement mis en file d'attente."
+          shred -u "$HOME/.netrc" 2>/dev/null || rm -f "$HOME/.netrc"
+          echo "Nettoyage termine."
 
       - name: Vérifier le site en ligne
-        # Le déploiement cPanel est asynchrone : on laisse aux tâches de
-        # .cpanel.yml le temps de s'exécuter avant de contrôler le résultat.
         run: |
           set -uo pipefail
-          echo "Attente de 45 s..."
-          sleep 45
-
           echec=0
           verifier() {
             code=$(curl -s -o /dev/null -w '%{http_code}' "https://www.amineelkhal.com$1?cb=$RANDOM")
@@ -125,11 +136,14 @@ jobs:
           verifier "/_inc_works.php"    404
 
           echo "== Contenu servi =="
-          if curl -s "https://www.amineelkhal.com/?cb=$RANDOM" | grep -q 'stats-band'; then
-            echo "  ok    les nouvelles sections sont en ligne"
-          else
-            echo "  ECHEC la page servie ne contient pas les nouvelles sections"
-            echec=1
-          fi
+          page=$(curl -s "https://www.amineelkhal.com/?cb=$RANDOM")
+          for motif in stats-band platforms-section career-section 'og:image' 'application/ld+json'; do
+            if printf '%s' "$page" | grep -q "$motif"; then
+              printf '  ok    %s\n' "$motif"
+            else
+              printf '  ECHEC %s absent de la page servie\n' "$motif"
+              echec=1
+            fi
+          done
 
           exit $echec
