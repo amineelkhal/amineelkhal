@@ -1,22 +1,28 @@
-name: Déploiement FTPS
+name: Déploiement FTPS (hors service)
 
-# Déploiement par FTPS explicite (AUTH TLS sur le port 21).
+# NE FONCTIONNE PAS depuis GitHub Actions, conserve pour memoire.
 #
-# Pourquoi ni SSH ni l'API cPanel : les ports 22, 2222, 7822 et 21098 sont
-# fermés, et Heberjahiz place une page de défi anti-bot (openresty, « One
-# moment, please... ») devant le port 2083, qui renvoie du HTML au lieu du JSON.
+# Constate par elimination, etape par etape :
+#   port 21 joignable depuis les runners      oui
+#   session FTPS ouverte, identifiants valides oui
+#   canal de donnees (PASV)                    BLOQUE
 #
-# Connexion à serveur133.heberjahiz.com et non à ftp.amineelkhal.com : le
-# certificat Let's Encrypt du serveur est émis pour ce nom, ce qui permet de
-# vérifier le certificat strictement au lieu de désactiver le contrôle.
+# Les ports passifs sont filtres entre GitHub Actions et Heberjahiz. Forcer
+# IPv4 (le serveur resout aussi via un prefixe NAT64), preferer PASV a EPSV et
+# desactiver le chiffrement du canal de donnees n'y ont rien change.
 #
-# Les étapes sont volontairement fines : les logs demandent une authentification
-# même sur un dépôt public, alors que la liste des étapes est publique. Le nom
-# de l'étape en échec suffit donc à diagnostiquer.
+# Autres voies fermees : SSH (22, 2222, 7822, 21098 filtres) et l'API cPanel
+# (page de defi anti-bot openresty devant le port 2083).
+#
+# Voie qui fonctionne : cPanel clone bien ce depot depuis GitHub en HTTPS
+# sortant. Il suffit alors, dans Git Version Control, de « Update from Remote »
+# puis « Deploy HEAD Commit », qui execute .cpanel.yml. Aucun identifiant a
+# stocker nulle part.
+#
+# Ce workflow est conserve en declenchement manuel : il redeviendrait utile si
+# l'hebergeur ouvrait les ports passifs ou autorisait une plage d'IP.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
