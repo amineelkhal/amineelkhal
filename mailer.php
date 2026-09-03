@@ -17,6 +17,10 @@ if (isset($_POST['lang'])) {
 }
 require __DIR__ . '/_inc_lang.php';
 
+// L'hébergeur laisse display_errors actif : une erreur PHP renverrait sa trace
+// au visiteur, chemins serveur compris. On journalise sans afficher.
+ini_set('display_errors', '0');
+
 header('Content-Type: text/plain; charset=utf-8');
 
 const MAIL_TO      = 'info@amineelkhal.com';
@@ -29,6 +33,17 @@ function fail($key, $code = 400, $arg = null)
     $message = t('mailer.' . $key);
     echo $arg === null ? $message : sprintf($message, $arg);
     exit;
+}
+
+/**
+ * Longueur d'une chaîne. L'extension mbstring n'est pas installée chez
+ * l'hébergeur : mb_strlen() y provoque une erreur fatale. strlen() compte des
+ * octets et non des caractères, ce qui rend seulement le plafond un peu plus
+ * strict sur les textes accentués — sans importance pour un contrôle de taille.
+ */
+function str_length($value)
+{
+    return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -49,7 +64,7 @@ $message = trim((string) ($_POST['message'] ?? ''));
 if ($name === '' || $email === '' || $message === '') {
     fail('fill');
 }
-if (mb_strlen($name) > 100 || mb_strlen($email) > 150 || mb_strlen($message) > 5000) {
+if (str_length($name) > 100 || str_length($email) > 150 || str_length($message) > 5000) {
     fail('toolong');
 }
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {

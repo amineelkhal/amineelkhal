@@ -13,6 +13,10 @@
     # Assets are referenced root-relative so they keep resolving from /en/.
     RewriteRule ^en/?$ index.php?lang=en [L,QSA]
     RewriteRule ^fr/?$ index.php?lang=fr [L,QSA]
+
+    # Les fichiers de langue ne sont pas des pages : ils ne font que renvoyer un
+    # tableau PHP. Servis directement, ils exposent la structure du site pour rien.
+    RewriteRule ^lang/ - [F,L]
 </IfModule>
 
 # Include fragments are not standalone pages.
