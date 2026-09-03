@@ -10,8 +10,9 @@ name: Déploiement FTPS
 # certificat Let's Encrypt du serveur est émis pour ce nom, ce qui permet de
 # vérifier le certificat strictement au lieu de désactiver le contrôle.
 #
-# Les étapes sont volontairement fines : le nom de l'étape en échec suffit à
-# diagnostiquer, sans avoir à ouvrir les logs.
+# Les étapes sont volontairement fines : les logs demandent une authentification
+# même sur un dépôt public, alors que la liste des étapes est publique. Le nom
+# de l'étape en échec suffit donc à diagnostiquer.
 
 on:
   push:
@@ -22,14 +23,16 @@ concurrency:
   group: deploiement-ftps
   cancel-in-progress: false
 
+env:
+  FTP_HOST: serveur133.heberjahiz.com
+  REMOTE: public_html
+
 jobs:
   deployer:
     runs-on: ubuntu-latest
     env:
-      FTP_HOST: serveur133.heberjahiz.com
       FTP_USER: ${{ secrets.FTP_USER }}
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      REMOTE: public_html
 
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +42,6 @@ jobs:
           if [ -z "${FTP_USER:-}" ]; then
             echo "::error::Le secret FTP_USER est vide ou inexistant."
             echo "Settings -> Secrets and variables -> Actions -> onglet SECRETS."
-            echo "L'onglet VARIABLES, juste a cote, ne convient pas : une variable"
-            echo "n'est pas masquee dans les logs, publics sur ce depot."
             exit 1
           fi
           echo "FTP_USER present (${#FTP_USER} caracteres)."
@@ -56,34 +57,79 @@ jobs:
       - name: Installation de lftp
         run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp
 
-      - name: Connexion FTPS et validation du certificat
+      - name: Joignabilite du port 21 depuis le runner
+        run: |
+          set +e
+          curl -sS --max-time 20 --connect-timeout 10 -o /dev/null "ftp://$FTP_HOST/"
+          code=$?
+          set -e
+          echo "curl exit=$code"
+          case $code in
+            7)  echo "::error::Port 21 injoignable depuis GitHub Actions : l'hebergeur"
+                echo "filtre les IP des runners. Le deploiement doit alors partir"
+                echo "d'une IP autorisee, avec deploy.ps1 en local."
+                exit 1 ;;
+            67) echo "Port 21 joignable : login anonyme refuse, ce qui est attendu." ;;
+            0)  echo "Port 21 joignable." ;;
+            *)  echo "::warning::Code curl inattendu ($code), on continue." ;;
+          esac
+
+      - name: Ouverture de session FTPS
         run: |
           set -uo pipefail
           umask 077
-          printf 'machine %s login %s password %s\n' \
-                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
+          : > "$HOME/.netrc"
+          echo "machine $FTP_HOST login $FTP_USER password $FTP_PASSWORD" > "$HOME/.netrc"
 
-          # Connexion seule : ni envoi ni suppression. Isole les problemes
-          # d'identifiants, de pare-feu et de certificat.
+          # Login puis pwd : aucun canal de donnees n'est ouvert ici. Un echec
+          # designe donc les identifiants ou le certificat, rien d'autre.
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
-          set ftp:ssl-protect-data true
           set ssl:verify-certificate true
           set ftp:passive-mode true
-          set net:max-retries 2
-          set net:timeout 25
+          set net:max-retries 1
+          set net:timeout 20
           set cmd:fail-exit true
           open ftp://$FTP_HOST
           pwd
-          cls -1 | head -40
           bye
           LFTP
           rc=$?
           rm -f "$HOME/.netrc"
           if [ $rc -ne 0 ]; then
-            echo "::error::Connexion FTPS impossible (code $rc). Causes possibles :"
-            echo "  identifiants refuses, IP du runner GitHub bloquee par le"
-            echo "  pare-feu de l'hebergeur, ou port 21 filtre en sortie."
+            echo "::error::Session refusee (code $rc) : mot de passe errone dans le"
+            echo "secret FTP_PASSWORD, compte desactive, ou certificat rejete."
+            exit $rc
+          fi
+
+      - name: Listage du repertoire (canal de donnees)
+        run: |
+          set -uo pipefail
+          umask 077
+          echo "machine $FTP_HOST login $FTP_USER password $FTP_PASSWORD" > "$HOME/.netrc"
+
+          # cls ouvre un canal de donnees en mode passif, sur un port haut. Si la
+          # session passe mais que ceci echoue, ce sont les ports passifs qui sont
+          # filtres. Le pwd revele aussi la racine du compte, ce qui dira si le
+          # prefixe public_html est le bon.
+          lftp -f /dev/stdin <<LFTP
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate true
+          set ftp:passive-mode true
+          set net:max-retries 1
+          set net:timeout 20
+          set cmd:fail-exit true
+          open ftp://$FTP_HOST
+          pwd
+          cls -1
+          bye
+          LFTP
+          rc=$?
+          rm -f "$HOME/.netrc"
+          if [ $rc -ne 0 ]; then
+            echo "::error::Canal de donnees bloque (code $rc) : les ports passifs"
+            echo "sont filtres entre GitHub Actions et l'hebergeur."
             exit $rc
           fi
 
@@ -91,8 +137,7 @@ jobs:
         run: |
           set -uo pipefail
           umask 077
-          printf 'machine %s login %s password %s\n' \
-                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
+          echo "machine $FTP_HOST login $FTP_USER password $FTP_PASSWORD" > "$HOME/.netrc"
 
           lftp -f /dev/stdin <<LFTP
           set ftp:ssl-force true
@@ -125,8 +170,7 @@ jobs:
         run: |
           set -uo pipefail
           umask 077
-          printf 'machine %s login %s password %s\n' \
-                 "$FTP_HOST" "$FTP_USER" "$FTP_PASSWORD" > "$HOME/.netrc"
+          echo "machine $FTP_HOST login $FTP_USER password $FTP_PASSWORD" > "$HOME/.netrc"
 
           # Pas de fail-exit ici : un fichier deja absent est un cas normal.
           lftp -f /dev/stdin <<LFTP
